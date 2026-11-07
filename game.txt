@@ -288,32 +288,113 @@ function zoomMap(k) { mapZoom = clamp(mapZoom * k, 1, 5); renderMap(); }
 
 /* ---------- карта регионов: мозаика по ближайшему региону, обрезанная по контуру страны ---------- */
 function regionGeo(regs) {
-  const W = 900, H = 520, pad = 40;
-  const lats = regs.map(r => r["широта"]), lons = regs.map(r => r["долгота"]), la0 = Math.min(...lats), la1 = Math.max(...lats), lo0 = Math.min(...lons), lo1 = Math.max(...lons);
+  const W = 900, H = 520, pad = 16;
+  const lats = regs.map(r => r["широта"]), lons = regs.map(r => r["долгота"]);
+  let la0 = Math.min(...lats), la1 = Math.max(...lats), lo0 = Math.min(...lons), lo1 = Math.max(...lons);
+  const mLo = Math.max(3, .07 * (lo1 - lo0)), mLa = Math.max(3, .07 * (la1 - la0));  // запас на края страны за центрами регионов
+  lo0 -= mLo; lo1 += mLo; la0 -= mLa; la1 += mLa;
   const cl = Math.cos((la0 + la1) / 2 * Math.PI / 180), k = Math.min((W - 2 * pad) / Math.max((lo1 - lo0) * cl, 1e-6), (H - 2 * pad) / Math.max(la1 - la0, 1e-6));
   const ox = (W - (lo1 - lo0) * cl * k) / 2, oy = (H - (la1 - la0) * k) / 2;
   return { W, H, proj: (lo, la) => [ox + (lo - lo0) * cl * k, H - oy - (la - la0) * k] };
 }
+/* ---------- настоящие границы регионов (Natural Earth, области/штаты/провинции), подгружаются из интернета ---------- */
+const ADM1 = {}, ADM1_URLS = [
+  "https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_50m_admin_1_states_provinces.geojson",
+  "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_1_states_provinces.geojson",
+  "https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_10m_admin_1_states_provinces.geojson",
+  "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson"];
+function ringsOf(geom) {
+  if (!geom) return [];
+  const polys = geom.type === "Polygon" ? [geom.coordinates] : geom.type === "MultiPolygon" ? geom.coordinates : [];
+  return polys.flat();
+}
+function ensureAdmin1(home, regs) {
+  if (ADM1[home]) return;
+  const ne = GEO[home] && GEO[home][0], keep = new Set([ne]);
+  if (home === "Россия") keep.add("Ukraine"); if (home === "Украина") keep.add("Russia");
+  ADM1[home] = { state: "loading" };
+  (async () => {
+    let lastErr = "";
+    for (const url of ADM1_URLS) {
+      try {
+        const r = await fetch(url); if (!r.ok) throw new Error("HTTP " + r.status);
+        const js = await r.json(), feats = [];
+        for (const f of js.features || []) {
+          const p = f.properties || {}; if (!keep.has(p.admin)) continue;
+          const rings = ringsOf(f.geometry); if (rings.length) feats.push({ admin: p.admin, name: p.name || "", name_ru: p.name_ru || "", name_en: p.name_en || p.name || "", rings });
+        }
+        if (feats.filter(f => f.admin === ne).length < regs.length * 0.5 && url !== ADM1_URLS[ADM1_URLS.length - 1]) { lastErr = "в файле мало регионов страны"; continue; }
+        ADM1[home] = { state: "ok", feats, src: url }; break;
+      } catch (e) { lastErr = String(e.message || e); }
+    }
+    if (ADM1[home].state !== "ok") ADM1[home] = { state: "fail", err: lastErr };
+    delete CELLSKEYS[home]; if (WIN["Регионы"]) renderWin("Регионы");
+  })();
+}
+const CELLSKEYS = {};
+const TYPEWORDS = /(^| )(область|край|республика|автономный|автономная|округ|город|федеральный|штат|провинция|ил|земля|префектура|регион|район|муниципалитет|административный|территория|национальный)(?= |$)/g;
+function norm(s) { return String(s || "").toLowerCase().replace(/ё/g, "е").replace(/[^a-zа-я0-9 ]+/g, " ").replace(/\s+/g, " ").trim(); }
+function cores(name) {
+  const out = new Set(), base = String(name || ""), par = (base.match(/\(([^)]*)\)/g) || []).map(x => x.slice(1, -1)).filter(x => !/^(российская|украинская)$/i.test(x.trim())), main = base.replace(/\([^)]*\)/g, " ");
+  for (const t of [main, ...par, ...base.split(/ — | – | - /)]) { const c = norm(t).replace(TYPEWORDS, " ").replace(/\s+/g, ""); if (c.length >= 3) out.add(c); }
+  return [...out];
+}
+function lev(a, b) { const m = a.length, n = b.length; if (Math.abs(m - n) > 2) return 9; let prev = Array.from({ length: n + 1 }, (_, j) => j); for (let i = 1; i <= m; i++) { const cur = [i]; for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; } return prev[n]; }
+function pip(rings, x, y) { let inside = false; for (const r of rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const [xi, yi] = r[i], [xj, yj] = r[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside; } return inside; }
+function matchRegions(regs, feats, home) {
+  const ne = GEO[home] && GEO[home][0], res = new Array(regs.length).fill(-1), taken = new Set(), fk = feats.map(f => [...cores(f.name_ru), ...cores(f.name)]);
+  const cand = [];
+  regs.forEach((r, i) => { const rk = cores(r["название"]); fk.forEach((keys, j) => { let sc = 0; for (const a of rk) for (const b of keys) { if (a === b) sc = Math.max(sc, 4); else if (a.length >= 5 && b.length >= 5 && (a.startsWith(b) || b.startsWith(a))) sc = Math.max(sc, 3); else if (a.length >= 6 && lev(a, b) <= 1) sc = Math.max(sc, 2); } if (sc) cand.push([sc + (feats[j].admin === ne ? .5 : 0), i, j]); }); });
+  cand.sort((p, q) => q[0] - p[0]);
+  for (const [, i, j] of cand) if (res[i] < 0 && !taken.has(j)) { res[i] = j; taken.add(j); }
+  regs.forEach((r, i) => { if (res[i] >= 0) return; feats.forEach((f, j) => { if (res[i] < 0 && !taken.has(j) && pip(f.rings, r["долгота"], r["широта"])) { res[i] = j; taken.add(j); } }); });
+  return res;
+}
+function fillRings(rings, home, g, id, ids, rows) {
+  const { W, H } = g; for (let y = 0; y < H; y++) rows[y].length = 0;
+  for (const ring of rings) {
+    const los = ring.map(q => q[0]), wrap = Math.max(...los) - Math.min(...los) > 180 || (home === "Россия" && Math.max(...los) < -100);
+    const pts = ring.map(([lo, la]) => g.proj(wrap && lo < 0 ? lo + 360 : lo, la));
+    for (let k = 0; k < pts.length; k++) {
+      const [x0, y0] = pts[k], [x1, y1] = pts[(k + 1) % pts.length]; if (y0 === y1) continue;
+      const ya = Math.max(0, Math.ceil(Math.min(y0, y1) - .5)), yb = Math.min(H - 1, Math.floor(Math.max(y0, y1) - .5));
+      for (let y = ya; y <= yb; y++) rows[y].push(x0 + (y + .5 - y0) * (x1 - x0) / (y1 - y0));
+    }
+  }
+  for (let y = 0; y < H; y++) { const xs = rows[y]; if (xs.length < 2) continue; xs.sort((a, b) => a - b); for (let k = 0; k + 1 < xs.length; k += 2) { const xa = Math.max(0, Math.ceil(xs[k] - .5)), xb = Math.min(W - 1, Math.floor(xs[k + 1] - .5)); for (let x = xa; x <= xb; x++) ids[y * W + x] = id; } }
+}
 const CELLS = {};
 function regionCells(home, regs, g) {
-  const key = home + "|" + (WORLD ? 1 : 0) + "|" + regs.length; if (CELLS[key]) return CELLS[key];
+  const ad = ADM1[home], real = ad && ad.state === "ok", key = home + "|" + (WORLD ? 1 : 0) + "|" + regs.length + "|" + (real ? ad.feats.length : ad ? ad.state : "-"); if (CELLS[key]) return CELLS[key];
   const { W, H } = g, n = regs.length, px = new Float32Array(n), py = new Float32Array(n);
   regs.forEach((r, i) => { [px[i], py[i]] = g.proj(r["долгота"], r["широта"]); });
   const near = Array.from({ length: n }, (_, i) => { let m = 1e9; for (let j = 0; j < n; j++) if (j !== i) m = Math.min(m, Math.hypot(px[i] - px[j], py[i] - py[j])); return m === 1e9 ? 60 : m; });
-  const mc = document.createElement("canvas"); mc.width = W; mc.height = H; const mx_ = mc.getContext("2d", { willReadFrequently: true });
-  let haveShape = false;
-  if (WORLD && GEO[home]) { const f = WORLD.find(x => x.name === GEO[home][0]); if (f) { const p = new Path2D(); for (const ring of f.rings) {
-      const los = ring.map(q => q[0]), span = Math.max(...los) - Math.min(...los), wrap = span > 180 || (home === "Россия" && Math.max(...los) < -100);
-      ring.forEach(([lo, la], i) => { const [x, y] = g.proj(wrap && lo < 0 ? lo + 360 : lo, la); i ? p.lineTo(x, y) : p.moveTo(x, y); }); p.closePath();
-    } mx_.fill(p, "evenodd"); haveShape = true; } }
-  regs.forEach((_, i) => { mx_.beginPath(); mx_.arc(px[i], py[i], Math.max(6, near[i] * (haveShape ? .35 : 1.7)), 0, 6.2832); mx_.fill(); });
-  const a = mx_.getImageData(0, 0, W, H).data, ids = new Int16Array(W * H).fill(-1);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    if (a[(y * W + x) * 4 + 3] < 128) continue;
-    let b = 0, bd = 1e12; for (let i = 0; i < n; i++) { const dx = px[i] - x, dy = py[i] - y, d = dx * dx + dy * dy; if (d < bd) { bd = d; b = i; } }
-    ids[y * W + x] = b;
+  const ids = new Int16Array(W * H).fill(-1), matched = new Array(n).fill(false);
+  if (real) {
+    const m = matchRegions(regs, ad.feats, home), rows = Array.from({ length: H }, () => []);
+    regs.forEach((_, i) => { if (m[i] >= 0) { fillRings(ad.feats[m[i]].rings, home, g, i, ids, rows); matched[i] = true; } });
   }
-  return (CELLS[key] = { ids, px, py });
+  const nReal = matched.filter(Boolean).length, cand = regs.map((_, i) => i).filter(i => !matched[i]), allIdx = regs.map((_, i) => i);
+  const use = nReal > 0 ? cand : allIdx;
+  if (use.length) {
+    const mc = document.createElement("canvas"); mc.width = W; mc.height = H; const mx_ = mc.getContext("2d", { willReadFrequently: true });
+    let haveShape = false;
+    if (WORLD && GEO[home]) { const f = WORLD.find(x => x.name === GEO[home][0]); if (f) { const p = new Path2D(); for (const ring of f.rings) {
+      const los = ring.map(q => q[0]), wrap = Math.max(...los) - Math.min(...los) > 180 || (home === "Россия" && Math.max(...los) < -100);
+      ring.forEach(([lo, la], i) => { const [x, y] = g.proj(wrap && lo < 0 ? lo + 360 : lo, la); i ? p.lineTo(x, y) : p.moveTo(x, y); }); p.closePath(); } mx_.fill(p, "evenodd"); haveShape = true; } }
+    const base = haveShape ? mx_.getImageData(0, 0, W, H).data : null;
+    for (const i of use) {
+      if (haveShape) { const cx = Math.round(px[i]), cy = Math.round(py[i]); if (cx >= 0 && cx < W && cy >= 0 && cy < H && base[(cy * W + cx) * 4 + 3] > 127) continue; }
+      mx_.beginPath(); mx_.arc(px[i], py[i], haveShape ? Math.min(9, Math.max(5, near[i] * .25)) : Math.max(6, near[i] * 1.7), 0, 6.2832); mx_.fill();
+    }
+    const a = mx_.getImageData(0, 0, W, H).data;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (ids[y * W + x] >= 0 || a[(y * W + x) * 4 + 3] < 128) continue;
+      let b = use[0], bd = 1e12; for (const i of use) { const dx = px[i] - x, dy = py[i] - y, d = dx * dx + dy * dy; if (d < bd) { bd = d; b = i; } }
+      ids[y * W + x] = b;
+    }
+  }
+  return (CELLS[key] = { ids, px, py, real: nReal, missing: nReal > 0 ? cand.map(i => regs[i]["название"]) : [] });
 }
 function cssRGB(c) { const x = cssRGB.ctx || (cssRGB.ctx = Object.assign(document.createElement("canvas"), { width: 1, height: 1 }).getContext("2d", { willReadFrequently: true })); x.clearRect(0, 0, 1, 1); x.fillStyle = "#000"; x.fillStyle = c; x.fillRect(0, 0, 1, 1); return [...x.getImageData(0, 0, 1, 1).data]; }
 function paintRegions(regs, g, cells, color) {
@@ -376,7 +457,11 @@ const VIEWS = {
     const regs = S["регионы"], g = regionGeo(regs);
     const winners = [...new Set(regs.map(r => r["победитель"]).filter(Boolean))], col = new Map(winners.map((w, i) => [w, PALETTE[i % PALETTE.length]]));
     const color = r => { if (!r["подконтрольный"]) return "#999"; if (mapMode === "победитель" && r["победитель"]) return col.get(r["победитель"]); if (mapMode === "регионализм") return `rgb(255,${Math.round(255 * (1 - Math.min(1, r["регионализм"])))},${Math.round(255 * (1 - Math.min(1, r["регионализм"])))})`; const rel = r["экономика"] / r["население"]; const t = Math.min(1, rel / 2.5); return `rgb(${Math.round(255 * (1 - t))},${150 + Math.round(35 * (1 - t))},255)`; };
-    const canvas = paintRegions(regs, g, regionCells(S["снимок"]["страна"], regs, g), color);
+    const home = S["снимок"]["страна"]; ensureAdmin1(home, regs);
+    const cells = regionCells(home, regs, g), canvas = paintRegions(regs, g, cells, color), ad = ADM1[home];
+    const note = el("div", { class: "sub", style: "padding:2px 10px 6px" }, !ad || ad.state === "loading" ? "Загружаю настоящие границы регионов… пока показана приблизительная карта."
+      : ad.state === "fail" ? "Границы регионов не загрузились (" + ad.err + "), показана приблизительная карта."
+      : `Настоящие границы: ${cells.real} из ${regs.length}.` + (cells.missing.length ? " Приблизительно: " + cells.missing.slice(0, 12).join(", ") + (cells.missing.length > 12 ? " и ещё " + (cells.missing.length - 12) : "") + "." : ""));
     const info = el("div", { class: "sub", style: "padding:6px 10px;min-height:2.6em" }, "Нажмите на регион, чтобы увидеть данные.");
     const describe = r => `${r["название"]}: население ${(100 * r["население"]).toFixed(1)}%, экономика ${(100 * r["экономика"]).toFixed(1)}%, безработица ${r["безработица"].toFixed(1)}%, регионализм ${r["регионализм"].toFixed(2)}${r["победитель"] ? ", лидирует " + r["победитель"] : ""}`;
     canvas.addEventListener("pointerdown", e => { const r = canvas.regionAt(e); if (r) info.textContent = describe(r); });
@@ -387,7 +472,7 @@ const VIEWS = {
     const sel = el("select", {}, top.concat([...regs].sort((a, b) => b["регионализм"] - a["регионализм"]).slice(0, 5)).filter((r, i, a) => a.indexOf(r) === i).map(r => el("option", {}, r["название"])));
     const eq = el("input", { type: "range", min: 0, max: .7, step: .05, value: S["выравнивание"] });
     return el("div", {}, el("div", { class: "row" }, "Показывать:", mode, legend),
-      el("div", { class: "mapbox" }, canvas, info),
+      el("div", { class: "mapbox" }, canvas, note, info),
       el("div", { class: "cols", style: "margin-top:14px" },
         el("div", { class: "panel" }, el("h3", {}, "Политика центра"), el("div", { class: "row" }, "Выравнивание:", eq, el("button", { onclick: () => act("выравнивание", [eq.value]) }, "Установить")),
           el("div", { class: "row" }, sel, el("button", { onclick: () => act("автономия", [sel.value]) }, "Расширить автономию"))),
