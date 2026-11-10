@@ -84,9 +84,7 @@ nav{position:relative;z-index:5;background:var(--bg)}
 .rank span.cur{background:var(--acc);color:var(--acc-ink);border-color:var(--acc);font-weight:600}.rank span.done{color:var(--ink)}
 .locked{opacity:.55}.lock{color:var(--bad);font-size:13px;margin:4px 0}
 
-.win{background:color-mix(in srgb,var(--bg) 93%,transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
-@media (max-width:600px){.win:not(.max){max-height:62vh}}
-.vis{display:block;color:var(--mut);font-size:12px;font-weight:400;line-height:1.3;margin-top:2px}
+.win{background:color-mix(in srgb,var(--bg) 93%,transparent);color:var(--mut);font-size:12px;font-weight:400;line-height:1.3;margin-top:2px}
 .tile span .vis,.tile .vis{font-weight:400}
 
 .tablebox{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:8px}.tablebox thead th{position:sticky;top:0;background:var(--card)}
@@ -97,7 +95,7 @@ nav{position:relative;z-index:5;background:var(--bg)}
 #worldmap{background:var(--sea);overflow:hidden;touch-action:none;cursor:grab}
 #worldmap svg{min-width:0}
 .land{stroke:#fff8;stroke-width:.7;vector-effect:non-scaling-stroke}.land.game{stroke:#fffc}
-.reg{stroke:#0006;stroke-width:.6;cursor:pointer;vector-effect:non-scaling-stroke}.reg:hover{stroke:#000;stroke-width:1.6}.reg.sel{stroke:#fff;stroke-width:2.4}
+.reg{stroke:#0006;stroke-width:.6;cursor:pointer;}.reg:hover{stroke:#000;stroke-width:1.6}.reg.sel{stroke:#fff;stroke-width:2.4}
 .rl{fill:#111;paint-order:stroke;stroke:#fffc;stroke-width:2.5px;pointer-events:none;font-weight:600}
 .ax{stroke:#ffffff55}
 
@@ -113,16 +111,18 @@ nav{position:relative;z-index:5;background:var(--bg)}
 :root{--sea:#3f7189;--seaedge:#5b8ea3}
 @media (prefers-color-scheme:dark){:root{--sea:#1f4256;--seaedge:#2f5f77}}
 #worldmap{position:relative;background:radial-gradient(ellipse at 50% 40%,var(--sea),color-mix(in srgb,var(--sea) 70%,#000));border:3px double #b08d4c;box-shadow:inset 0 0 48px rgba(0,0,0,.55),0 2px 10px rgba(0,0,0,.4)}
-#worldmap::after{content:"";position:absolute;inset:0;pointer-events:none;mix-blend-mode:multiply;opacity:.35;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .55  0 0 0 0 .45  0 0 0 0 .3  0 0 0 .9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+#worldmap::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.12;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .55  0 0 0 0 .45  0 0 0 0 .3  0 0 0 .9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
 .shore{stroke:#9fd0dc;stroke-opacity:.38;stroke-width:7px;vector-effect:non-scaling-stroke;stroke-linejoin:round;pointer-events:none}
 .land{stroke:#2c1d0f;stroke-opacity:.75;stroke-width:1.1px}.land.game{stroke:#2c1d0f}
-.reg,.reg.ext{stroke:#2c1d0f;stroke-opacity:.5;stroke-width:.6px}.reg.sel{stroke:#ffd45e;stroke-opacity:1;stroke-width:2.6px}
+.reg,.reg.ext{stroke:#2c1d0f;stroke-opacity:.5;stroke-width:var(--rw,.3px);vector-effect:none}.reg.sel{stroke:#ffd45e;stroke-opacity:1;stroke-width:var(--rs,1px)}
 .river{stroke:#6fb3d6;stroke-width:1.3px}
 .rl,.cn,.cl{font-family:Georgia,"Times New Roman",serif}
 .cn{fill:#2a1a0a;font-weight:700;letter-spacing:.22em;paint-order:stroke;stroke:#f3e3b8aa;stroke-width:1.6px;vector-effect:non-scaling-stroke;pointer-events:none;text-anchor:middle;dominant-baseline:middle;opacity:.88}
 .rl{fill:#2a1a0a;font-weight:600;letter-spacing:.04em;stroke:#f3e3b8cc;stroke-width:2.4px}
 .cl{fill:#1e1206;stroke:#f3e3b8dd}
 .city{fill:#f3e3b8;stroke:#2a1a0a}.city.cap{fill:#c0392b}
+
+.shore{stroke-width:5px}#worldmap{box-shadow:none}
 
 :root{--gl:max(16px,env(safe-area-inset-left,0px));--gr:max(16px,env(safe-area-inset-right,0px))}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--card)}
@@ -333,12 +333,13 @@ function unwrapRing(pts) {
   return out;
 }
 function worldPath(f) {
+  const ck = LAT_TOP + "," + LAT_BOT; if (f._dk === ck) return f._d;
   let d = "";
   for (const poly of f.polys) for (const r of poly) {
     const lo = r.map(p => p[0]), a = Math.min(...lo), b = Math.max(...lo), shifts = [0]; if (b > 180) shifts.push(-360); if (a < -180) shifts.push(360);
     for (const sh of shifts) d += "M" + r.map(([x, y]) => mx(x + sh).toFixed(1) + "," + my(y).toFixed(1)).join("L") + "Z";
   }
-  return d;
+  f._dk = ck; f._d = d; return d;
 }
 function loadWorld() {
   if (worldTried) return; worldTried = true;
@@ -379,7 +380,7 @@ function applyView() {
   const vb = viewBox(); svg.setAttribute("viewBox", vb.join(" "));
   const state = (VIEW.k >= REGION_ZOOM ? "R" : "W") + (VIEW.k >= 3.5 ? "L" : "") + (VIEW.k >= 6 ? "M" : "") + (VIEW.k >= 12 ? "X" : "");
   const out = RBOX && VIEW.k >= REGION_ZOOM && (vb[0] < RBOX[0] || vb[1] < RBOX[1] || vb[0] + vb[2] > RBOX[2] || vb[1] + vb[3] > RBOX[3]);
-  if (state !== mapLayerState || out) renderMap(); else svg.querySelectorAll(".mk").forEach(c => c.setAttribute("r", (c.classList.contains("sel") ? 12 : 8) / Math.sqrt(VIEW.k)));
+  if (state !== mapLayerState || out) { clearTimeout(applyView.t); applyView.t = setTimeout(renderMap, 120); } else svg.querySelectorAll(".mk").forEach(c => c.setAttribute("r", (c.classList.contains("sel") ? 12 : 8) / Math.sqrt(VIEW.k)));
 }
 function zoomAt(factor, clientX, clientY) {
   const svg = $("#worldmap svg"); if (!svg) return;
@@ -410,9 +411,12 @@ function regionColorOf(r, winners) {
   if (mapMode === "регионализм") { const t = Math.min(1, r["регионализм"]); return `rgb(255,${Math.round(255 * (1 - t))},${Math.round(255 * (1 - t))})`; }
   const t = Math.min(1, r["экономика"] / r["население"] / 2.5); return `rgb(${Math.round(255 * (1 - t))},${150 + Math.round(35 * (1 - t))},255)`;
 }
-function ringsPath(rings) {
-  let d = ""; for (const raw of rings) { const r = unwrapRing(raw), lo = r.map(p => p[0]), a = Math.min(...lo), b = Math.max(...lo), shifts = [0]; if (b > 180) shifts.push(-360); if (a < -180) shifts.push(360);
+function ringsPath(rings, holder) {
+  const step = VIEW.k < 3 ? 3 : VIEW.k < 6 ? 2 : 1, ck = step + "|" + LAT_TOP + "," + LAT_BOT;
+  if (holder && holder._rk === ck) return holder._rd;
+  let d = ""; for (const raw of rings) { const r0 = unwrapRing(raw), r = step > 1 && r0.length > 12 ? r0.filter((q, i) => i % step === 0 || i === r0.length - 1) : r0, lo = r.map(p => p[0]), a = Math.min(...lo), b = Math.max(...lo), shifts = [0]; if (b > 180) shifts.push(-360); if (a < -180) shifts.push(360);
     for (const sh of shifts) d += "M" + r.map(([x, y]) => mx(x + sh).toFixed(1) + "," + my(y).toFixed(1)).join("L") + "Z"; }
+  if (holder) { holder._rk = ck; holder._rd = d; }
   return d;
 }
 function bbHit(bb, box) {   // bb в градусах [lo0,la0,lo1,la1]; box в единицах карты [x0,y0,x1,y1]
@@ -431,7 +435,8 @@ function renderMap() {
   const regionsOn = VIEW.k >= REGION_ZOOM, regs = S["регионы"];
   mapLayerState = (regionsOn ? "R" : "W") + (VIEW.k >= 3.5 ? "L" : "") + (VIEW.k >= 6 ? "M" : "") + (VIEW.k >= 12 ? "X" : "");
   const boxEl = $("#worldmap"), pxU = (boxEl.clientWidth || 360) / (MW / VIEW.k), px = n => n / pxU;   // px(n): n пикселей экрана в единицах карты
-  RBOX = [vb[0] - vb[2] * .75, vb[1] - vb[3] * .75, vb[0] + vb[2] * 1.75, vb[1] + vb[3] * 1.75];
+  svg.style.setProperty("--rw", px(0.7).toFixed(3)); svg.style.setProperty("--rs", px(2.4).toFixed(3));
+  RBOX = [vb[0] - vb[2] * .4, vb[1] - vb[3] * .4, vb[0] + vb[2] * 1.4, vb[1] + vb[3] * 1.4];
   if (WORLD) for (const f of WORLD) svg.append(mk("path", { d: worldPath(f), class: "shore", fill: "none" }));
   const ctryLabels = [];
   if (WORLD) for (const f of WORLD) {
@@ -457,7 +462,7 @@ function renderMap() {
       if (real && real[i] >= 0) {
         const ft = ad.feats[real[i]]; usedFeat.add(real[i]);
         if (!bbHit(ft.bb, RBOX)) return;
-        const p = mk("path", { d: ringsPath(ft.rings), "fill-rule": "evenodd", fill: col, class: "reg" + (sel ? " sel" : "") });
+        const p = mk("path", { d: ringsPath(ft.rings, ft), "fill-rule": "evenodd", fill: col, class: "reg" + (sel ? " sel" : "") });
         p.onclick = () => pick(r); const t = mk("title", {}); t.textContent = r["название"] + ": безработица " + r["безработица"].toFixed(1) + "%"; p.append(t); svg.append(p);
         if (VIEW.k >= 3.5) addLabel(r["название"].replace(/\s*\(.*\)/, ""), ft.big, "rl");
       } else {
@@ -472,9 +477,9 @@ function renderMap() {
       for (let j = 0; j < list.length; j++) {
         const ft = list[j]; if (adm === GEO[home][0] && real) continue;
         if (!bbHit(ft.bb, RBOX)) continue;
-        const nm = ft.name_ru || ft.name_en || ft.name, p = mk("path", { d: ringsPath(ft.rings), "fill-rule": "evenodd", class: "reg ext" }); p.style.fill = shadeOf(landColors()[adm] || hashPal(adm), nm);
+        const nm = ft.name_ru || ft.name_en || ft.name, p = mk("path", { d: ringsPath(ft.rings, ft), "fill-rule": "evenodd", class: "reg ext" }); p.style.fill = shadeOf(landColors()[adm] || hashPal(adm), nm);
         if (ru) p.onclick = () => select(ru);
-        const t = mk("title", {}); t.textContent = nm + (ru ? " (" + ru + ")" : " (" + adm + ")"); p.append(t); svg.append(p);
+        svg.append(p);
         if (VIEW.k >= 3.5) addLabel(nm, ft.big, "rl");
       }
     }
