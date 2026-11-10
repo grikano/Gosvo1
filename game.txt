@@ -47,7 +47,7 @@ input[type=range]{padding:0}ul.log{list-style:none;padding:0;margin:0}ul.log li{
 #worldwrap{padding:6px 8px 8px}
 #worldmap{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:auto;max-height:46vh}
 #worldmap svg{min-width:100%}
-.land{fill:var(--line);stroke:var(--bg);stroke-width:.6}.land.game{cursor:pointer;stroke:var(--card)}
+.land{stroke:var(--bg);stroke-width:.6}.land.game{cursor:pointer;stroke:var(--card)}
 .mk{stroke:var(--ink);stroke-width:1.5;cursor:pointer}.mk.sel{stroke-width:3}
 .mapbar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px;font-size:14px}
 .mapbar #mapinfo{min-width:0;overflow-wrap:anywhere}.zoom{display:flex;gap:4px;flex:none}
@@ -108,6 +108,21 @@ nav{position:relative;z-index:5;background:var(--bg)}
 .rl{vector-effect:non-scaling-stroke;fill:#222;paint-order:stroke;stroke:#fffb;stroke-width:2px;pointer-events:none;font-weight:600;opacity:.9}
 .land{stroke:#ffffffaa;stroke-width:.6}
 .pbox{overflow:auto;border:1px solid var(--line);border-radius:8px}.pbox td,.pbox th{vertical-align:top}.pbox .row{flex-wrap:nowrap}
+
+/* вид карты как в средневековых стратегиях: тёмное море, пергамент, засечки, рамка */
+:root{--sea:#3f7189;--seaedge:#5b8ea3}
+@media (prefers-color-scheme:dark){:root{--sea:#1f4256;--seaedge:#2f5f77}}
+#worldmap{position:relative;background:radial-gradient(ellipse at 50% 40%,var(--sea),color-mix(in srgb,var(--sea) 70%,#000));border:3px double #b08d4c;box-shadow:inset 0 0 48px rgba(0,0,0,.55),0 2px 10px rgba(0,0,0,.4)}
+#worldmap::after{content:"";position:absolute;inset:0;pointer-events:none;mix-blend-mode:multiply;opacity:.35;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .55  0 0 0 0 .45  0 0 0 0 .3  0 0 0 .9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+.shore{stroke:#9fd0dc;stroke-opacity:.38;stroke-width:7px;vector-effect:non-scaling-stroke;stroke-linejoin:round;pointer-events:none}
+.land{stroke:#2c1d0f;stroke-opacity:.75;stroke-width:1.1px}.land.game{stroke:#2c1d0f}
+.reg,.reg.ext{stroke:#2c1d0f;stroke-opacity:.5;stroke-width:.6px}.reg.sel{stroke:#ffd45e;stroke-opacity:1;stroke-width:2.6px}
+.river{stroke:#6fb3d6;stroke-width:1.3px}
+.rl,.cn,.cl{font-family:Georgia,"Times New Roman",serif}
+.cn{fill:#2a1a0a;font-weight:700;letter-spacing:.22em;paint-order:stroke;stroke:#f3e3b8aa;stroke-width:1.6px;vector-effect:non-scaling-stroke;pointer-events:none;text-anchor:middle;dominant-baseline:middle;opacity:.88}
+.rl{fill:#2a1a0a;font-weight:600;letter-spacing:.04em;stroke:#f3e3b8cc;stroke-width:2.4px}
+.cl{fill:#1e1206;stroke:#f3e3b8dd}
+.city{fill:#f3e3b8;stroke:#2a1a0a}.city.cap{fill:#c0392b}
 
 :root{--gl:max(16px,env(safe-area-inset-left,0px));--gr:max(16px,env(safe-area-inset-right,0px))}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--card)}
@@ -329,8 +344,20 @@ function loadWorld() {
   if (worldTried) return; worldTried = true;
   fetch(WORLD_URL).then(r => { if (!r.ok) throw 0; return r.json(); }).then(t => { WORLD = decodeTopo(t); renderMap(); if (WIN["Регионы"]) renderWin("Регионы"); }).catch(() => {});
 }
-const LANDPAL = ["#f3d27a", "#a9d98f", "#f1a98a", "#cba6e0", "#7fd6c2", "#f49ac1", "#dcc66e", "#e8b77a", "#bddc7c", "#ec9a9a", "#96c9a8", "#d9a6d0", "#e6cf9a", "#b5d3e8"];
+const LANDPAL = ["#e05a5a", "#5b8fe0", "#e8a33d", "#58b368", "#a870d6", "#e8d44d", "#2fb5a8", "#e87aa8", "#a0724a", "#8bc34a", "#4fb3e8", "#c0584a"];
 function hashN(str) { let h = 7; for (const ch of String(str)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; }
+function hexHsl(h) { const r = parseInt(h.slice(1, 3), 16) / 255, g = parseInt(h.slice(3, 5), 16) / 255, b = parseInt(h.slice(5, 7), 16) / 255, mx_ = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx_ + mn) / 2; let H = 0, Sx = 0; if (mx_ !== mn) { const d = mx_ - mn; Sx = l > .5 ? d / (2 - mx_ - mn) : d / (mx_ + mn); H = mx_ === r ? (g - b) / d + (g < b ? 6 : 0) : mx_ === g ? (b - r) / d + 2 : (r - g) / d + 4; H *= 60; } return [H, Sx * 100, l * 100]; }
+function shadeOf(base, key) { const [H, Sx, L] = hexHsl(base || "#c9a25a"), h = hashN(key); return `hsl(${Math.round(H + (h % 9) - 4)} ${Math.round(Sx * .78)}% ${Math.round(Math.max(30, Math.min(70, L * .86 + ((h >> 3) % 7) * 2.4 - 6)))}%)`; }
+const RU_COUNTRY = { "United States of America": "США", Canada: "Канада", Mexico: "Мексика", Brazil: "Бразилия", Argentina: "Аргентина", Chile: "Чили", Peru: "Перу", Colombia: "Колумбия", Venezuela: "Венесуэла", Bolivia: "Боливия", Russia: "Россия", China: "Китай", India: "Индия", Japan: "Япония", Kazakhstan: "Казахстан", Mongolia: "Монголия", Iran: "Иран", Iraq: "Ирак", "Saudi Arabia": "Саудовская Аравия", Turkey: "Турция", Egypt: "Египет", Libya: "Ливия", Algeria: "Алжир", Sudan: "Судан", Ethiopia: "Эфиопия", Nigeria: "Нигерия", "Dem. Rep. Congo": "ДР Конго", Angola: "Ангола", Tanzania: "Танзания", Kenya: "Кения", "South Africa": "ЮАР", Namibia: "Намибия", Mali: "Мали", Niger: "Нигер", Chad: "Чад", Mauritania: "Мавритания", Morocco: "Марокко", Australia: "Австралия", Indonesia: "Индонезия", Pakistan: "Пакистан", Afghanistan: "Афганистан", Ukraine: "Украина", France: "Франция", Germany: "Германия", "United Kingdom": "Великобритания", Spain: "Испания", Italy: "Италия", Poland: "Польша", Sweden: "Швеция", Norway: "Норвегия", Finland: "Финляндия", Belarus: "Беларусь", Romania: "Румыния", Uzbekistan: "Узбекистан", Turkmenistan: "Туркмения", Myanmar: "Мьянма", Thailand: "Таиланд", Vietnam: "Вьетнам", Malaysia: "Малайзия", Philippines: "Филиппины", "South Korea": "Южная Корея", "North Korea": "КНДР", Greenland: "Гренландия", Madagascar: "Мадагаскар", Mozambique: "Мозамбик", Zambia: "Замбия", Somalia: "Сомали", Cuba: "Куба", Ecuador: "Эквадор", Paraguay: "Парагвай", Uruguay: "Уругвай", Syria: "Сирия", Yemen: "Йемен", Oman: "Оман", Georgia: "Грузия", Azerbaijan: "Азербайджан", "New Zealand": "Новая Зеландия", Bangladesh: "Бангладеш", Nepal: "Непал" };
+let LANDCOL = null;
+function landColors() {   // соседние страны получают разные цвета
+  if (LANDCOL || !WORLD) return LANDCOL || {};
+  const bb = WORLD.map(f => { let a = 1e9, b = 1e9, c = -1e9, d = -1e9; for (const poly of f.polys) for (const r of poly) for (const q of r) { if (q[0] < a) a = q[0]; if (q[0] > c) c = q[0]; if (q[1] < b) b = q[1]; if (q[1] > d) d = q[1]; } return [a - .5, b - .5, c + .5, d + .5]; });
+  const area = bb.map(x => (x[2] - x[0]) * (x[3] - x[1])), order = WORLD.map((f, i) => i).sort((i, j) => area[j] - area[i]), col = {};
+  for (const i of order) { const used = new Set(); for (const j of order) { if (j === i || col[WORLD[j].name] === undefined) continue; const A = bb[i], B = bb[j]; if (A[0] <= B[2] && B[0] <= A[2] && A[1] <= B[3] && B[1] <= A[3]) used.add(col[WORLD[j].name]); }
+    let k = hashN(WORLD[i].name) % LANDPAL.length; for (let t = 0; t < LANDPAL.length && used.has(k); t++) k = (k + 1) % LANDPAL.length; col[WORLD[i].name] = k; }
+  LANDCOL = {}; for (const n in col) LANDCOL[n] = LANDPAL[col[n]]; return LANDCOL;
+}
 function hashPal(name) { return LANDPAL[hashN(name) % LANDPAL.length]; }
 function countryColor(n, home) {
   if (n === home) return "var(--acc)";
@@ -405,20 +432,28 @@ function renderMap() {
   mapLayerState = (regionsOn ? "R" : "W") + (VIEW.k >= 3.5 ? "L" : "") + (VIEW.k >= 6 ? "M" : "") + (VIEW.k >= 12 ? "X" : "");
   const boxEl = $("#worldmap"), pxU = (boxEl.clientWidth || 360) / (MW / VIEW.k), px = n => n / pxU;   // px(n): n пикселей экрана в единицах карты
   RBOX = [vb[0] - vb[2] * .75, vb[1] - vb[3] * .75, vb[0] + vb[2] * 1.75, vb[1] + vb[3] * 1.75];
+  if (WORLD) for (const f of WORLD) svg.append(mk("path", { d: worldPath(f), class: "shore", fill: "none" }));
+  const ctryLabels = [];
   if (WORLD) for (const f of WORLD) {
-    const ru = byName[f.name], p = mk("path", { d: worldPath(f), "fill-rule": "evenodd", class: ru ? "land game" : "land", fill: hashPal(f.name) });
-    if (ru === home) p.setAttribute("stroke-width", 1.6);
-    if (ru && !regionsOn) { p.onclick = () => select(ru); if (ru === mapSel) p.setAttribute("stroke-width", 2.4); }
+    const ru = byName[f.name], p = mk("path", { d: worldPath(f), "fill-rule": "evenodd", class: ru ? "land game" : "land" }); p.style.fill = shadeOf(landColors()[f.name] || hashPal(f.name), f.name + "#");
+    if (ru === home) p.setAttribute("stroke-width", 1.8);
+    if (ru && !regionsOn) { p.onclick = () => select(ru); if (ru === mapSel) p.setAttribute("stroke-width", 2.6); }
     svg.append(p);
+    const nm = ru || RU_COUNTRY[f.name]; if (nm && VIEW.k < 4.5) {
+      let big = null, bn = -1; for (const poly of f.polys) { const r0 = poly[0]; if (r0 && r0.length > bn) { bn = r0.length; big = r0; } }
+      if (big) { const ur = unwrapRing(big), lo = ur.map(q => q[0]), la = ur.map(q => q[1]), x0 = Math.min(...lo), x1 = Math.max(...lo), y0 = Math.min(...la), y1 = Math.max(...la), wp = (x1 - x0) / 360 * MW * pxU, hp = (y1 - y0) / (LAT_TOP - LAT_BOT) * MH * pxU, txt = nm.toUpperCase(), fpx = Math.min(17, hp * 0.3, wp / (txt.length * 0.85));
+        if (fpx >= 6.5) ctryLabels.push({ txt, x: mx((x0 + x1) / 2), y: my((y0 + y1) / 2), fs: px(fpx), cls: "cn" }); }
+    }
   }
   const labels = [];
   if (regionsOn) {
     ensureAdmin1(home, regs); loadAdmAll(); loadExtra("rivers"); loadExtra("cities");
     const ad = ADM1[home], winners = [...new Set(regs.map(r => r["победитель"]).filter(Boolean))], pick = r => { if (MAPDRAG.moved > 6) return; selRegion = r["название"]; openWin("Регионы"); renderWin("Регионы"); };
     const real = ad && ad.state === "ok" ? matchRegions(regs, ad.feats, home) : null, usedFeat = new Set();
-    const addLabel = (txt, bb, cls) => { const w = (bb[2] - bb[0]) / 360 * MW, h = (bb[3] - bb[1]) / (LAT_TOP - LAT_BOT) * MH; if (!w || !h) return; const fit = Math.min(w / (txt.length * 0.56), h * 0.7), fpx = fit * pxU; if (fpx < 7) return; labels.push({ txt, x: mx((bb[0] + bb[2]) / 2), y: my((bb[1] + bb[3]) / 2), fs: Math.min(fit, px(13)), cls }); };
+    const cand = [], taken = [], cxv = vb[0] + vb[2] / 2, cyv = vb[1] + vb[3] / 2;
+    const addLabel = (txt, bb, cls) => { const w = (bb[2] - bb[0]) / 360 * MW, h = (bb[3] - bb[1]) / (LAT_TOP - LAT_BOT) * MH; if (!w || !h) return; const wp = w * pxU, hp = h * pxU, fpx = Math.min(13, hp * 0.42, wp / (txt.length * 0.6)); if (fpx < 8) return; const x = mx((bb[0] + bb[2]) / 2), y = my((bb[1] + bb[3]) / 2); cand.push({ txt, x, y, fs: px(fpx), wu: px(fpx * 0.6 * txt.length), hu: px(fpx * 1.1), cls, d: Math.hypot(x - cxv, y - cyv) }); };
     regs.forEach((r, i) => {
-      const col = regionColorOf(r, winners), sel = r["название"] === selRegion;
+      const col = shadeOf(landColors()[GEO[home][0]], r["название"]), sel = r["название"] === selRegion;
       if (real && real[i] >= 0) {
         const ft = ad.feats[real[i]]; usedFeat.add(real[i]);
         if (!bbHit(ft.bb, RBOX)) return;
@@ -428,7 +463,7 @@ function renderMap() {
       } else {
         const lo = r["долгота"] + (home === "Россия" && r["долгота"] < -100 ? 360 : 0), c = mk("circle", { cx: mx(lo), cy: my(r["широта"]), r: px(Math.max(5, 40 * Math.sqrt(r["население"]))), fill: col, class: "reg" + (sel ? " sel" : "") });
         c.onclick = () => pick(r); const t = mk("title", {}); t.textContent = r["название"]; c.append(t); svg.append(c);
-        if (VIEW.k >= 5) labels.push({ txt: r["название"].replace(/\s*\(.*\)/, ""), x: mx(lo), y: my(r["широта"]) + px(14), fs: px(10), cls: "rl" });
+        if (VIEW.k >= 5) { const txt = r["название"].replace(/\s*\(.*\)/, ""), x = mx(lo), y = my(r["широта"]) + px(14); cand.push({ txt, x, y, fs: px(10), wu: px(6 * txt.length), hu: px(12), cls: "rl", d: Math.hypot(x - cxv, y - cyv) }); }
       }
     });
     // регионы остальных стран (и несопоставленные регионы своей)
@@ -437,20 +472,22 @@ function renderMap() {
       for (let j = 0; j < list.length; j++) {
         const ft = list[j]; if (adm === GEO[home][0] && real) continue;
         if (!bbHit(ft.bb, RBOX)) continue;
-        const nm = ft.name_ru || ft.name_en || ft.name, p = mk("path", { d: ringsPath(ft.rings), "fill-rule": "evenodd", fill: hashPal(adm + nm), class: "reg ext" });
+        const nm = ft.name_ru || ft.name_en || ft.name, p = mk("path", { d: ringsPath(ft.rings), "fill-rule": "evenodd", class: "reg ext" }); p.style.fill = shadeOf(landColors()[adm] || hashPal(adm), nm);
         if (ru) p.onclick = () => select(ru);
         const t = mk("title", {}); t.textContent = nm + (ru ? " (" + ru + ")" : " (" + adm + ")"); p.append(t); svg.append(p);
         if (VIEW.k >= 3.5) addLabel(nm, ft.big, "rl");
       }
     }
+    cand.sort((a, b) => a.d - b.d); let shown = 0;
+    for (const L of cand) { if (shown >= 16) break; if (taken.some(t => Math.abs(t[0] - L.x) < (t[2] + L.wu) / 2 && Math.abs(t[1] - L.y) < (t[3] + L.hu) / 2)) continue; taken.push([L.x, L.y, L.wu, L.hu]); labels.push(L); shown++; }
     // реки
     if (EXTRA.rivers) { const maxRank = VIEW.k >= 8 ? 9 : VIEW.k >= 4 ? 6 : 4;
       for (const rv of EXTRA.rivers) { if (rv.rank > maxRank || !bbHit(rv.bb, RBOX)) continue;
         let d = ""; for (const l of rv.lines) d += "M" + l.map(q => mx(q[0]).toFixed(1) + "," + my(q[1]).toFixed(1)).join("L");
         const pth = mk("path", { d, class: "river", fill: "none" }); if (rv.name) { const t = mk("title", {}); t.textContent = rv.name; pth.append(t); } svg.append(pth); } }
     // города
-    const minPop = VIEW.k >= 16 ? 0.15 : VIEW.k >= 8 ? 0.4 : VIEW.k >= 4 ? 1.2 : 3.5, taken = [];
-    const cs = citiesNow().filter(c => (c.pop >= minPop || c.cap) && c.lon > -180 && bbHit([c.lon, c.lat, c.lon, c.lat], RBOX)).sort((a, b) => (b.cap - a.cap) || (b.pop - a.pop)).slice(0, 220);
+    const minPop = VIEW.k >= 16 ? 0.25 : VIEW.k >= 8 ? 0.7 : VIEW.k >= 4 ? 2 : 4;
+    const cs = citiesNow().filter(c => (c.pop >= minPop || c.cap) && c.lon > -180 && bbHit([c.lon, c.lat, c.lon, c.lat], RBOX)).sort((a, b) => (b.cap - a.cap) || (b.pop - a.pop)).slice(0, 40);
     for (const c of cs) {
       const x = mx(c.lon), y = my(c.lat), w = px(7 * c.name.length + 14), h = px(13);
       if (taken.some(t => Math.abs(t[0] - x) < (t[2] + w) / 2 && Math.abs(t[1] - y) < (t[3] + h) / 2)) continue; taken.push([x, y, w, h]);
@@ -458,7 +495,7 @@ function renderMap() {
       const t = mk("text", { x: x + rr + px(2), y: y + px(3.5), "font-size": px(c.cap ? 11.5 : 10), class: "cl" + (c.cap ? " cap" : "") }); t.textContent = c.name; svg.append(t);
     }
   }
-  for (const L of labels) { const t = mk("text", { x: L.x, y: L.y, class: L.cls, "font-size": L.fs, "text-anchor": "middle", "dominant-baseline": "middle" }); t.textContent = L.txt; svg.append(t); }
+  for (const L of [...ctryLabels, ...labels]) { const t = mk("text", { x: L.x, y: L.y, class: L.cls, "font-size": L.fs, "text-anchor": "middle", "dominant-baseline": "middle" }); t.textContent = L.txt; svg.append(t); }
   for (const [ru, [, la, lo]] of Object.entries(GEO)) {
     if (regionsOn) continue;
     const w = S["мир"].find(x => x["название"] === ru), c = mk("circle", { cx: mx(lo), cy: my(la), r: (ru === mapSel ? 12 : 8) / Math.sqrt(VIEW.k), fill: countryColor(ru, home), class: "mk" + (ru === mapSel ? " sel" : "") });
@@ -469,7 +506,7 @@ function renderMap() {
   const w = S["мир"].find(x => x["название"] === mapSel), info = $("#mapinfo");
   const txt = mapSel === home ? `${mapSel}: ваша страна` : w ? `${mapSel}: отношения ${Math.round(w["отношения"])}, доверие ${Math.round(w["доверие"])}, сила ${f1(w["сила"])}` + (w["война"] ? ", идёт война" : "") + (w["санкции_на_нас"] ? ", санкции против нас" : "") + (w["договоры"].length ? ", договоры: " + w["договоры"].join(", ") : "") : mapSel;
   info.replaceChildren(...[el("span", {}, txt), " ", mapSel !== home ? el("button", { onclick: () => openWin("Мир") }, "Действия") : null].filter(Boolean));
-  $("#mapleg").textContent = (WORLD ? "" : "Контуры стран не загрузились (нужен интернет): показаны только отметки стран. ") + (regionsOn ? "Регионы всех стран. Нажмите на свой регион, чтобы управлять им; на чужой — чтобы выбрать страну. Реки и города подгружаются из интернета." : "Колесо мыши или щипок: приблизить; при приближении страны делятся на регионы, появляются реки и города.");
+  $("#mapleg").textContent = (WORLD ? "" : "Контуры стран не загрузились (нужен интернет): показаны только отметки стран. ") + (regionsOn ? "Нажмите на свой регион, чтобы управлять им; на чужой — чтобы выбрать страну. " + (ADMALL ? (ADMALL.state === "ok" ? "Границы регионов загружены. " : ADMALL.state === "loading" ? "Границы регионов загружаются (файл большой, подождите)… " : "Границы регионов не загрузились (" + ADMALL.err + "): у вашей страны показаны кружки. ") : "") + (EXTRA.rivers ? "Реки загружены. " : "Реки не загружены. ") + (EXTRA.cities ? "Города загружены." : "Города: запасной список.") : "Колесо мыши или щипок: приблизить; при приближении страны делятся на регионы, появляются реки и города.");
   syncWins();
 }
 let lastMapBottom = null;
