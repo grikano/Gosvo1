@@ -111,7 +111,7 @@ nav{position:relative;z-index:5;background:var(--bg)}
 :root{--sea:#3f7189;--seaedge:#5b8ea3}
 @media (prefers-color-scheme:dark){:root{--sea:#1f4256;--seaedge:#2f5f77}}
 #worldmap{position:relative;background:radial-gradient(ellipse at 50% 40%,var(--sea),color-mix(in srgb,var(--sea) 70%,#000));border:3px double #b08d4c;box-shadow:inset 0 0 48px rgba(0,0,0,.55),0 2px 10px rgba(0,0,0,.4)}
-#worldmap::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.12;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .55  0 0 0 0 .45  0 0 0 0 .3  0 0 0 .9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+
 .shore{stroke:#9fd0dc;stroke-opacity:.38;stroke-width:7px;vector-effect:non-scaling-stroke;stroke-linejoin:round;pointer-events:none}
 .land{stroke:#2c1d0f;stroke-opacity:.75;stroke-width:1.1px}.land.game{stroke:#2c1d0f}
 .reg,.reg.ext{stroke:#2c1d0f;stroke-opacity:.5;stroke-width:var(--rw,.3px);vector-effect:none}.reg.sel{stroke:#ffd45e;stroke-opacity:1;stroke-width:var(--rs,1px)}
@@ -123,6 +123,8 @@ nav{position:relative;z-index:5;background:var(--bg)}
 .city{fill:#f3e3b8;stroke:#2a1a0a}.city.cap{fill:#c0392b}
 
 .shore{stroke-width:5px}#worldmap{box-shadow:none}
+
+.shore{stroke-width:3px;stroke-opacity:.25}#worldmap{box-shadow:none;border:2px solid #b08d4c}
 
 :root{--gl:max(16px,env(safe-area-inset-left,0px));--gr:max(16px,env(safe-area-inset-right,0px))}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--card)}
@@ -200,7 +202,7 @@ const api = async (path, body) => { if (window.demoApi) return window.demoApi(pa
 const f1 = v => (typeof v === "number" ? (Math.abs(v) < 1 && v !== 0 ? v.toFixed(2) : v.toFixed(1)) : v);
 const PALETTE = ["#c0392b", "#2a6fdb", "#2e9d5b", "#e0961a", "#8e44ad", "#16a085", "#7f8c8d", "#d35400"];
 let selRegion = null, META = null, S = null, pick = { country: null, party: null }, mapMode = "победитель";
-const TABS = ["Обзор", "Карьера", "Решения", "Политика", "Регионы", "Мир", "Общество и СМИ", "Выборы", "Рейтинг", "Журнал"];
+const TABS = ["Обзор", "Карьера", "Решения", "Бюджет", "Политика", "Регионы", "Мир", "Общество и СМИ", "Выборы", "Рейтинг", "Журнал"];
 
 async function init() {
   META = await api("/api/meta");
@@ -232,9 +234,10 @@ function show() {
   $("#h-lead").textContent = [r["глава государства"], r["глава правительства"]].filter(Boolean).join(" · ") + (S["карьера"] ? " · вы: " + S["карьера"]["должность"] + ", " + S["карьера"]["партия"] : S["игрок"] ? " · вы: " + S["игрок"] : " · вы: глава партии и государства");
   renderDock();
   fitMap();
-  try { renderMap(); } catch (e) { console.error(e); }
+  try { if (VIEW.k < REGION_ZOOM || !$("#worldmap svg")) renderMap(); } catch (e) { console.error(e); }
   if (!Object.keys(WIN).length) openWin("Обзор");
-  for (const n of Object.keys(WIN)) renderWin(n);
+  clearTimeout(show.t); const names = Object.keys(WIN);
+  names.forEach((n, i) => setTimeout(() => { if (WIN[n]) renderWin(n); }, i * 25));
 }
 async function step(n, unit = "месяцев") { document.querySelectorAll(".steps button").forEach(b => b.disabled = true); S = await api("/api/step", { [unit]: n }); document.querySelectorAll(".steps button").forEach(b => b.disabled = false); show(); }
 async function act(name, args) {
@@ -437,14 +440,16 @@ function renderMap() {
   const boxEl = $("#worldmap"), pxU = (boxEl.clientWidth || 360) / (MW / VIEW.k), px = n => n / pxU;   // px(n): n пикселей экрана в единицах карты
   svg.style.setProperty("--rw", px(0.7).toFixed(3)); svg.style.setProperty("--rs", px(2.4).toFixed(3));
   RBOX = [vb[0] - vb[2] * .4, vb[1] - vb[3] * .4, vb[0] + vb[2] * 1.4, vb[1] + vb[3] * 1.4];
-  if (WORLD) for (const f of WORLD) svg.append(mk("path", { d: worldPath(f), class: "shore", fill: "none" }));
+  const admOk = ADMALL && ADMALL.state === "ok" && VIEW.k >= REGION_ZOOM;
+  if (WORLD && !regionsOn) for (const f of WORLD) svg.append(mk("path", { d: worldPath(f), class: "shore", fill: "none" }));
   const ctryLabels = [];
   if (WORLD) for (const f of WORLD) {
+    if (admOk && ADMALL.byAdmin.has(f.name) && !(f.name === GEO[home][0] && ADM1[home] && ADM1[home].state !== "ok")) continue;
     const ru = byName[f.name], p = mk("path", { d: worldPath(f), "fill-rule": "evenodd", class: ru ? "land game" : "land" }); p.style.fill = shadeOf(landColors()[f.name] || hashPal(f.name), f.name + "#");
     if (ru === home) p.setAttribute("stroke-width", 1.8);
     if (ru && !regionsOn) { p.onclick = () => select(ru); if (ru === mapSel) p.setAttribute("stroke-width", 2.6); }
     svg.append(p);
-    const nm = ru || RU_COUNTRY[f.name]; if (nm && VIEW.k < 4.5) {
+    const nm = ru || RU_COUNTRY[f.name]; if (nm && !regionsOn) {
       let big = null, bn = -1; for (const poly of f.polys) { const r0 = poly[0]; if (r0 && r0.length > bn) { bn = r0.length; big = r0; } }
       if (big) { const ur = unwrapRing(big), lo = ur.map(q => q[0]), la = ur.map(q => q[1]), x0 = Math.min(...lo), x1 = Math.max(...lo), y0 = Math.min(...la), y1 = Math.max(...la), wp = (x1 - x0) / 360 * MW * pxU, hp = (y1 - y0) / (LAT_TOP - LAT_BOT) * MH * pxU, txt = nm.toUpperCase(), fpx = Math.min(17, hp * 0.3, wp / (txt.length * 0.85));
         if (fpx >= 6.5) ctryLabels.push({ txt, x: mx((x0 + x1) / 2), y: my((y0 + y1) / 2), fs: px(fpx), cls: "cn" }); }
@@ -745,6 +750,7 @@ const HELP = {
   "Журнал": "Слева: события в стране и мире (выборы, протесты, войны, договоры). Справа: ваши решения и что из них вышло. Запись «не вышло» значит, что команда не сработала, причина указана рядом."
 };
 HELP["Выборы"] = "Выборы решают, какие партии получат места в парламенте и кто будет править. Здесь виден опрос (прогноз мест), касса и инструменты партии. Влиять может лидер партии: митинги, реклама, работа с группами избирателей, смена программы, сбор денег. Каждое действие стоит денег из кассы партии, имеет паузу и побочные эффекты. Результат зависит ещё от экономики и поддержки власти.";
+HELP["Бюджет"] = "Бюджет — это деньги, которые государство и регион получают (налоги, доходы предприятий) и тратят (пенсии, министерства, стройка). Если расходы больше доходов, казна тает и растёт долг. Здесь всё в деньгах за месяц; ползунки меняют траты министерств и налоги, а предприятия в таблице ниже дают дополнительный доход.";
 HELP["Рейтинг"] = "Место вашей страны среди 14 стран по ВВП, ВВП на душу, населению и военным расходам. Другие страны растут своим темпом, ваша считается по игре.";
 const LAWTEXT = { "налог на доходы": "Множитель налога с зарплат. 1,0 — как сейчас, 1,2 — налоги на 20% выше. Больше налогов — больше денег в бюджете, но людям остаётся меньше.", "НДС": "Налог на покупки, включён в цену товара. Выше ставка — богаче бюджет, но дороже жизнь.", "пенсии и пособия": "Множитель выплат пенсионерам и безработным. Больше 1,0 — выплаты растут, бюджет тратит больше.", "образование": "Какую долю ВВП тратят на школы и вузы. Эффект виден через годы." };
 function lawPicker() {
@@ -804,6 +810,14 @@ function budgetPanel() {
     el("div", { class: "cols" }, el("div", {}, el("h4", {}, "Доходы: " + fmtM(B["доход_всего"])), el("table", {}, el("tbody", {}, incs.map(([k, v]) => row(k, v))))),
       el("div", {}, el("h4", {}, "Расходы: " + fmtM(B["расход_всего"])), el("table", {}, el("tbody", {}, outs.map(([k, v]) => row(k, v)))))),
     el("small", { class: "expl" }, "Чтобы увеличить доход: стройте предприятия (окно «Решения»), растите экономику, меняйте налоги. Расходы на министерства (образование, здравоохранение и др.) учтены в закупках."));
+}
+
+function leverRow(l) {
+  const fixed = l["аргументы"] || [], inp = el("input", { type: "range", min: l["мин"], max: l["макс"], step: l["шаг"], value: l["значение"] }), out = el("b", {}, f1(l["значение"]) + " " + l["ед"]);
+  inp.oninput = () => { out.textContent = f1(+inp.value) + " " + l["ед"]; };
+  const off = !S["в_правительстве"] || !!l["закрыто"];
+  return el("div", { class: "lever" + (off ? " locked" : "") }, el("div", { class: "lh" }, el("b", {}, l["название"])), el("p", { class: "sub" }, l["что"]),
+    el("div", { class: "row" }, inp, out, el("button", { disabled: off ? "" : null, onclick: () => act(l["команда"], [...fixed, inp.value]) }, "Применить")), lockNote(l["закрыто"] || (!S["в_правительстве"] ? "Менять бюджет страны может только правящая партия или глава государства." : "")));
 }
 const VIEWS = {
   "Обзор"() {
@@ -970,6 +984,37 @@ const VIEWS = {
     return el("div", {}, help("Общество и СМИ"), el("div", { class: "cols" }, block("Общество", s["общество"]), block("Безопасность", s["безопасность"]), block("Информационная среда", s["СМИ"]), block("Экономика", s["экономика"])));
   },
 
+  "Бюджет"() {
+    const B = S["бюджет"], gdp = B["ввп_мес"] > 1 ? B["ввп_мес"] : 0, regs = S["регионы"];
+    const tbl = (rows, total) => el("table", {}, el("tbody", {}, rows.filter(([, v]) => v).map(([k, v]) => el("tr", {}, el("td", {}, k), el("td", {}, fmtM(v)), el("td", { class: "sub" }, gdp ? (100 * v / gdp).toFixed(1) + "% ВВП" : ""))), el("tr", { class: "tot" }, el("td", {}, el("b", {}, "Итого")), el("td", {}, el("b", {}, fmtM(total))), el("td", {}))));
+    const mins = S["рычаги"].filter(l => l["группа"] === "Бюджет по министерствам");
+    const minRows = mins.map(l => [l["название"] + " (план)", gdp * l["значение"] / 100]);
+    const taxLv = S["рычаги"].filter(l => ["Налоги"].includes(l["группа"]) || l["команда"] === "госзаказы");
+    // регион
+    const mine = regs.filter(x => x["подконтрольный"]); let name = selRegion && mine.find(x => x["название"] === selRegion) ? selRegion : (mine[0] || {})["название"];
+    const r = regs.find(x => x["название"] === name), ART = S["статьи_региона"];
+    const regBox = el("div", { class: "panel" }), fillReg = () => {
+      const r = regs.find(x => x["название"] === name), rg = gdp * r["экономика"], base = 1.0, taxp = 0.8 * r["налог"], projp = Math.max(0, r["бюджет"] - base - taxp), plan = r["план"] || {}, spent = Object.values(plan).reduce((a, b) => a + b, 0);
+      const inc = [["Отчисления и базовые поступления", rg * base / 100], ["Региональный налог (" + f1(r["налог"]) + "%)", rg * taxp / 100], ["Доход от предприятий региона", rg * projp / 100]], out = Object.entries(plan).map(([k, v]) => [ART[k] ? ART[k][0] : k, rg * v / 100]);
+      const sel = el("select", { onchange: e => { name = e.target.value; selRegion = name; fillReg(); } }, mine.slice().sort((a, b) => a["название"].localeCompare(b["название"], "ru")).map(x => el("option", { value: x["название"], selected: x["название"] === name ? "" : null }, x["название"])));
+      const incT = rg * r["бюджет"] / 100, outT = rg * spent / 100;
+      regBox.replaceChildren(el("h3", {}, "Бюджет региона"), el("div", { class: "row" }, sel, el("button", { onclick: () => { selRegion = name; openWin("Регионы"); renderWin("Регионы"); } }, "Менять статьи и налог")),
+        el("p", { class: "sub" }, `Экономика региона ≈ ${fmtM(rg)} в месяц. В бюджет приходит ${fmtM(incT)}, тратится ${fmtM(outT)}, свободно ${fmtM(incT - outT)}. Безработица ${r["безработица"].toFixed(1)}%.`),
+        el("div", { class: "cols" }, el("div", {}, el("h4", {}, "Доходы региона"), tbl(inc, incT)), el("div", {}, el("h4", {}, "Расходы региона"), out.length ? tbl(out, outT) : el("p", { class: "sub" }, "Статьи не заданы: деньги копятся неиспользованными."))),
+        projectsPanel(name));
+    };
+    if (r) fillReg(); else regBox.replaceChildren(el("p", { class: "sub" }, "Нет подконтрольных регионов."));
+    const incs = Object.entries(B["доходы"]), outs = Object.entries(B["расходы"]);
+    return el("div", {}, help("Бюджет"),
+      el("div", { class: "tiles" }, [["Казна", fmtM(B["касса"])], ["Госдолг", fmtM(B["долг"])], ["Баланс за месяц", fmtM(B["баланс"])], ["ВВП в месяц", gdp ? fmtM(gdp) : "—"]].map(([k, v]) => el("div", { class: "tile" }, el("span", {}, k), el("b", {}, v)))),
+      gdp ? null : el("p", { class: "sub warn" }, "Данные за месяц появятся после первого шага времени (кнопки «+1 д.», «+1 мес.» вверху)."),
+      el("div", { class: "panel" }, el("h3", {}, "Бюджет государства за последний месяц"),
+        el("div", { class: "cols" }, el("div", {}, el("h4", {}, "Доходы"), tbl(incs, B["доход_всего"])), el("div", {}, el("h4", {}, "Расходы (факт)"), tbl(outs, B["расход_всего"]))),
+        el("h4", { style: "margin-top:10px" }, "Траты министерств по плану (в месяц)"), tbl(minRows, minRows.reduce((a, x) => a + x[1], 0)),
+        el("small", { class: "expl" }, "Факт трат министерств входит в «закупки». Недостающие деньги государство занимает: растёт долг и проценты по нему.")),
+      el("div", { class: "panel" }, el("h3", {}, "Изменить бюджет и налоги"), mins.map(leverRow), taxLv.map(leverRow)),
+      projectsPanel(null), regBox);
+  },
   "Выборы"() {
     const E = S["выборы"], c = S["карьера"];
     if (!E["включены"]) return el("div", {}, help("Выборы"), el("p", { class: "sub" }, "В этой стране парламентских выборов нет."));
